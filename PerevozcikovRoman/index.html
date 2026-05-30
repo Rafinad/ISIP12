@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Квадратный охотник | Поймай квадрат</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: linear-gradient(145deg, #0a1f1e 0%, #0c2a2a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Poppins', system-ui, -apple-system, 'Montserrat', sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 72px;
+            padding: 20px 25px 25px 25px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 25px 40px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.1);
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 36px;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            background-color: #1e2f2c;
+            transition: filter 0.1s ease;
+        }
+
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            background: #071615cc;
+            backdrop-filter: blur(8px);
+            padding: 10px 28px;
+            border-radius: 60px;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .score-box, .best-box {
+            background: #00000055;
+            padding: 5px 20px;
+            border-radius: 40px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .score-label, .best-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: #b3f0e5;
+            font-weight: 500;
+            margin-right: 10px;
+        }
+
+        .score-value, .best-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #f9f3c1;
+            text-shadow: 0 2px 5px #00000040;
+            line-height: 1;
+        }
+
+        button {
+            background: #ffcf4a;
+            border: none;
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 6px 24px;
+            border-radius: 50px;
+            color: #2c3a2b;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.15s linear;
+            box-shadow: 0 4px 0 #a56b1a;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #a56b1a;
+        }
+
+        .status {
+            background: #00000066;
+            border-radius: 60px;
+            padding: 6px 20px;
+            font-weight: 600;
+            color: #d9fffa;
+            font-size: 1rem;
+            text-align: center;
+            backdrop-filter: blur(4px);
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .timer-badge {
+            background: #1f3b36;
+            padding: 4px 18px;
+            border-radius: 30px;
+            font-family: monospace;
+            font-size: 1.2rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #ffd966;
+        }
+
+        footer {
+            font-size: 0.7rem;
+            text-align: center;
+            margin-top: 16px;
+            color: #5f9188;
+        }
+
+        @media (max-width: 550px) {
+            .game-container {
+                padding: 12px 16px 18px 16px;
+            }
+            .score-value, .best-value {
+                font-size: 1.6rem;
+            }
+            button {
+                padding: 4px 18px;
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="650" height="500" style="width:100%; height:auto; max-width:650px; aspect-ratio:650/500"></canvas>
+        <div class="info-panel">
+            <div class="score-box">
+                <span class="score-label">🍎 очки</span>
+                <span class="score-value" id="scoreDisplay">0</span>
+            </div>
+            <div class="best-box">
+                <span class="best-label">🏆 рекорд</span>
+                <span class="best-value" id="bestDisplay">0</span>
+            </div>
+            <div class="status">
+                <span>🎯</span>
+                <span id="gameStateText">В ИГРЕ</span>
+                <div class="timer-badge" id="timerText">∞</div>
+            </div>
+            <button id="resetButton">⟳ Новая игра</button>
+        </div>
+        <footer>⚡ кликай / тапай по движущемуся квадрату — успевай, пока не кончилось время!</footer>
+    </div>
+</div>
+
+<script>
+    (function(){
+        // ------ НАСТРОЙКИ ------
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Размеры канваса (фикс 650x500)
+        const CW = 650;
+        const CH = 500;
+        canvas.width = CW;
+        canvas.height = CH;
+
+        // Параметры квадрата-цели
+        const TARGET_SIZE = 58;      // пикселей (приятный крупный)
+        let targetX = CW/2 - TARGET_SIZE/2;
+        let targetY = CH/2 - TARGET_SIZE/2;
+
+        // Скорость движения (пикселей в секунду)
+        let velocityX = 180;
+        let velocityY = 180;
+
+        // Игровое состояние
+        let score = 0;
+        let bestScore = 0;
+        let timeLeft = 12.0;      // секунд
+        let gameActive = true;     // активна ли игра (false когда проигрыш или пауза? только проигрыш)
+        let animationId = null;
+        let lastTimestamp = 0;
+        let lastFrameTime = 0;
+
+        // Флаги для отскока от стен (чтобы избежать застревания)
+        let boundHug = false;
+
+        // Загружаем рекорд из localStorage
+        try {
+            const savedBest = localStorage.getItem('catchSquareBest');
+            if(savedBest !== null && !isNaN(parseInt(savedBest))) {
+                bestScore = parseInt(savedBest);
+            }
+        } catch(e) { /* тишина */ }
+        document.getElementById('bestDisplay').innerText = bestScore;
+
+        // Элементы UI
+        const scoreSpan = document.getElementById('scoreDisplay');
+        const bestSpan = document.getElementById('bestDisplay');
+        const gameStateSpan = document.getElementById('gameStateText');
+        const timerSpan = document.getElementById('timerText');
+        const resetBtn = document.getElementById('resetButton');
+
+        // ---- вспомогательные функции ----
+        function updateUI() {
+            scoreSpan.innerText = score;
+            bestSpan.innerText = bestScore;
+            if(gameActive) {
+                gameStateSpan.innerText = "🏃‍♂️ В ИГРЕ";
+                gameStateSpan.style.color = "#c3ffd8";
+            } else {
+                gameStateSpan.innerText = "💀 ИГРА ОКОНЧЕНА";
+                gameStateSpan.style.color = "#ffb794";
+            }
+            // отображение таймера: если timeLeft <= 0 или не активно – показываем 0.0
+            if(!gameActive) {
+                timerSpan.innerText = "0.0";
+            } else {
+                timerSpan.innerText = timeLeft.toFixed(1);
+            }
+        }
+
+        // сохранить рекорд, если надо
+        function updateBest() {
+            if(score > bestScore) {
+                bestScore = score;
+                bestSpan.innerText = bestScore;
+                try {
+                    localStorage.setItem('catchSquareBest', bestScore);
+                } catch(e) {}
+            }
+        }
+
+        // Проверка коллизии с мышкой / пальцем (координаты клика)
+        function checkHit(clickX, clickY) {
+            if(!gameActive) return false;
+            // попадание если точка внутри квадрата
+            if(clickX >= targetX && clickX <= targetX + TARGET_SIZE && clickY >= targetY && clickY <= targetY + TARGET_SIZE) {
+                // ПОПАДАНИЕ!
+                score++;
+                updateUI();
+                // Прибавляем время: +1.6 секунды
+                timeLeft = Math.min(timeLeft + 1.6, 15.0);  // максимальное время 15 секунд, чтобы не улетать в бесконечность
+                updateUI();
+
+                // Увеличиваем скорость на 6% (не более 480 пикселей/сек, приятный предел)
+                let newVx = velocityX * 1.06;
+                let newVy = velocityY * 1.06;
+                const MAX_SPEED = 520;
+                velocityX = Math.min(newVx, MAX_SPEED);
+                velocityY = Math.min(newVy, MAX_SPEED);
+
+                // Также маленький приятный эффект: квадрат чуть моргнет и слегка увеличим отскок (чисто визуально)
+                // Плюс, чтобы игра не застаивалась, добавляем случайный микро-сдвиг направления? нет, сохраняем направление,
+                // но если скорость очень низкая - поднимаем минимальную границу.
+                if(Math.abs(velocityX) < 100 && Math.abs(velocityY) < 100) {
+                    velocityX = velocityX > 0 ? 130 : -130;
+                    velocityY = velocityY > 0 ? 130 : -130;
+                }
+
+                // Для динамики — немного меняем направления после попадания? Нет, пусть сохраняется, но чтобы избежать "залипания" по диагонали, добавим лёгкое возмущение?
+                // но это опционально, но будет веселее: легкий случайный сдвиг вектора +/- 5% чтобы игра не была монотонной
+                let angleShift = (Math.random() - 0.5) * 0.25; // -0.125 до +0.125 радиан
+                let speed = Math.hypot(velocityX, velocityY);
+                if(speed > 0.01) {
+                    let angle = Math.atan2(velocityY, velocityX);
+                    angle += angleShift;
+                    let newSpeed = Math.min(speed, MAX_SPEED);
+                    velocityX = Math.cos(angle) * newSpeed;
+                    velocityY = Math.sin(angle) * newSpeed;
+                }
+                // дополнительный фикс минимальной скорости
+                if(Math.abs(velocityX) < 70 && Math.abs(velocityY) < 70) {
+                    if(velocityX === 0 && velocityY === 0) { velocityX=140; velocityY=130; }
+                    else if(Math.abs(velocityX) < 70) velocityX = velocityX >0 ? 85 : -85;
+                    else if(Math.abs(velocityY) < 70) velocityY = velocityY >0 ? 85 : -85;
+                }
+
+                updateBest();
+                // визуальная обратная связь: легкая вспышка канваса
+                canvas.style.filter = 'drop-shadow(0 0 6px gold) brightness(1.05)';
+                setTimeout(() => { canvas.style.filter = ''; }, 80);
+                return true;
+            }
+            return false;
+        }
+
+        // Обновление позиции по времени (deltaTime в секундах)
+        function updatePosition(deltaSec) {
+            if(!gameActive) return;
+            if(deltaSec > 0.033) deltaSec = 0.033; // ограничим максимальный шаг
+
+            // предварительное движение
+            let newX = targetX + velocityX * deltaSec;
+            let newY = targetY + velocityY * deltaSec;
+
+            // обработка столкновений со стенами с отскоком
+            let bounceX = false;
+            let bounceY = false;
+
+            // левая стена
+            if(newX < 0) {
+                newX = -newX;
+                velocityX = -velocityX;
+                bounceX = true;
+            }
+            // правая стена
+            if(newX + TARGET_SIZE > CW) {
+                let overshoot = (newX + TARGET_SIZE) - CW;
+                newX = CW - TARGET_SIZE - overshoot;
+                velocityX = -velocityX;
+                bounceX = true;
+            }
+            // верх
+            if(newY < 0) {
+                newY = -newY;
+                velocityY = -velocityY;
+                bounceY = true;
+            }
+            // низ
+            if(newY + TARGET_SIZE > CH) {
+                let overshootY = (newY + TARGET_SIZE) - CH;
+                newY = CH - TARGET_SIZE - overshootY;
+                velocityY = -velocityY;
+                bounceY = true;
+            }
+
+            // дополнительная защита от застревания (корректировка)
+            newX = Math.min(Math.max(newX, 0), CW - TARGET_SIZE);
+            newY = Math.min(Math.max(newY, 0), CH - TARGET_SIZE);
+
+            targetX = newX;
+            targetY = newY;
+
+            // легкая "анти-залипательная" коррекция, если скорость слишком мала после отскоков
+            if(bounceX && Math.abs(velocityX) < 45) {
+                velocityX = velocityX > 0 ? 95 : -95;
+            }
+            if(bounceY && Math.abs(velocityY) < 45) {
+                velocityY = velocityY > 0 ? 95 : -95;
+            }
+        }
+
+        // Обработка таймера (уменьшаем время, завершаем игру при timeLeft <= 0)
+        function updateTimer(deltaSec) {
+            if(!gameActive) return;
+            if(timeLeft <= 0) {
+                gameActive = false;
+                updateUI();
+                return;
+            }
+            timeLeft -= deltaSec;
+            if(timeLeft <= 0) {
+                timeLeft = 0;
+                gameActive = false;
+                updateUI();
+            } else {
+                updateUI();
+            }
+        }
+
+        // Сброс игры (новая игра)
+        function resetGame() {
+            gameActive = true;
+            score = 0;
+            timeLeft = 12.0;
+            // сброс скорости к базовой
+            velocityX = 180;
+            velocityY = 180;
+            // случайное начальное положение, но чтобы не перекрывать края
+            targetX = Math.random() * (CW - TARGET_SIZE - 40) + 20;
+            targetY = Math.random() * (CH - TARGET_SIZE - 40) + 20;
+            // гарант корректности
+            targetX = Math.min(Math.max(targetX, 5), CW - TARGET_SIZE - 5);
+            targetY = Math.min(Math.max(targetY, 5), CH - TARGET_SIZE - 5);
+            
+            // иногда добавим случайное направление для свежести
+            if(Math.random() > 0.5) velocityX = -velocityX;
+            if(Math.random() > 0.7) velocityY = -velocityY;
+            
+            // рекорд остаётся, но дисплей обновим
+            updateBest();  // обновит отображение лучшего (не меняет сам рекорд)
+            updateUI();
+            
+            // отрисовка сразу
+            drawCanvas();
+        }
+
+        // Рисование всех элементов
+        function drawCanvas() {
+            ctx.clearRect(0, 0, CW, CH);
+            
+            // Фон с тонкой сеткой (стиль)
+            ctx.fillStyle = "#1f3a36";
+            ctx.fillRect(0, 0, CW, CH);
+            // узоры
+            ctx.strokeStyle = "#2f5951";
+            ctx.lineWidth = 0.6;
+            for(let i = 0; i < CW; i += 45) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, CH);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i % CH);
+                ctx.lineTo(CW, i % CH);
+                ctx.stroke();
+            }
+            
+            // рисуем блики
+            ctx.shadowBlur = 0;
+            // главная цель - квадрат с градиентом и свечением
+            const grad = ctx.createLinearGradient(targetX, targetY, targetX+TARGET_SIZE, targetY+TARGET_SIZE);
+            grad.addColorStop(0, '#FFB347');
+            grad.addColorStop(0.6, '#FF7E05');
+            grad.addColorStop(1, '#E05A00');
+            ctx.fillStyle = grad;
+            ctx.shadowColor = "#ffbf69";
+            ctx.shadowBlur = 12;
+            ctx.fillRect(targetX, targetY, TARGET_SIZE, TARGET_SIZE);
+            ctx.shadowBlur = 0;
+            // белая кайма
+            ctx.strokeStyle = "#FFF3CF";
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(targetX, targetY, TARGET_SIZE, TARGET_SIZE);
+            // внутренний узор
+            ctx.fillStyle = "#FFE484";
+            ctx.font = `bold ${Math.floor(TARGET_SIZE * 0.5)}px "Segoe UI"`;
+            ctx.shadowBlur = 3;
+            ctx.fillText("⚡", targetX + TARGET_SIZE*0.27, targetY + TARGET_SIZE*0.7);
+            ctx.fillStyle = "#fff3b0";
+            ctx.font = `${Math.floor(TARGET_SIZE * 0.28)}px monospace`;
+            ctx.fillText("CLICK", targetX + TARGET_SIZE*0.2, targetY + TARGET_SIZE*0.38);
+            ctx.shadowBlur = 0;
+            
+            // индикатор времени / опасности
+            if(gameActive && timeLeft <= 3.0) {
+                ctx.fillStyle = "#ff0000aa";
+                ctx.beginPath();
+                ctx.rect(0, 0, CW, 8);
+                ctx.fill();
+                ctx.fillStyle = "#ffaa88";
+                ctx.font = "bold 16px monospace";
+                ctx.fillText("⚠️ СРОЧНО! ⚠️", CW-130, 25);
+            }
+            
+            // дополнительный счёт на холсте
+            ctx.font = "bold 28system-ui, 'Segoe UI'";
+            ctx.fillStyle = "#f5efcf";
+            ctx.shadowBlur = 2;
+            ctx.fillText(`⚡${score}`, 22, 58);
+            if(!gameActive) {
+                ctx.font = "800 34px system-ui";
+                ctx.fillStyle = "#FFD6A5";
+                ctx.shadowColor = "#00000080";
+                ctx.fillText("GAME OVER", CW/2-110, CH/2-40);
+                ctx.font = "18px monospace";
+                ctx.fillStyle = "#ffe1b3";
+                ctx.fillText("нажми 'Новая игра'", CW/2-95, CH/2+25);
+            }
+        }
+
+        // -------- Цикл анимации на requestAnimationFrame --------
+        let previousTime = null;
+        function gameLoop(nowMs) {
+            if(!previousTime) {
+                previousTime = nowMs;
+                requestAnimationFrame(gameLoop);
+                drawCanvas();
+                return;
+            }
+            let delta = Math.min(0.033, (nowMs - previousTime) / 1000);
+            if(delta > 0.001 && gameActive) {
+                updatePosition(delta);
+                updateTimer(delta);
+            }
+            drawCanvas();
+            previousTime = nowMs;
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // ----------  Обработка кликов / тапов ----------
+        function handleCanvasClick(e) {
+            if(!gameActive) return;
+            // получить координаты относительно canvas (учитывая resize)
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;   // canvas intrinsic width 650 / отображаемая ширина
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            if(e.touches) {
+                // touch событие
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+                e.preventDefault();
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            let canvasX = (clientX - rect.left) * scaleX;
+            let canvasY = (clientY - rect.top) * scaleY;
+            
+            if(canvasX >= 0 && canvasX <= CW && canvasY >= 0 && canvasY <= CH) {
+                const wasHit = checkHit(canvasX, canvasY);
+                if(wasHit) {
+                    // дополнительный микроэффект: вибрация если поддерживается (необязательно)
+                    if(navigator.vibrate) navigator.vibrate(30);
+                    // обновить рекорд при увеличении
+                    updateBest();
+                    updateUI();
+                } else {
+                    // промах - легкое наказание? Нет, промах не отнимает время, но можно сделать микро-штраф? 
+                    // По классике "поймай квадрат" безопасно, но для челленджа — уменьшим время на 0.2 секунды при промахе
+                    // (Игра становится напряжённее, но справедливо)
+                    if(gameActive) {
+                        timeLeft = Math.max(0, timeLeft - 0.2);
+                        if(timeLeft <= 0.01) {
+                            timeLeft = 0;
+                            gameActive = false;
+                            updateUI();
+                            drawCanvas();
+                        } else {
+                            updateUI();
+                            // визуальный фидбек промаха
+                            canvas.style.filter = 'brightness(0.92)';
+                            setTimeout(() => { if(canvas) canvas.style.filter = ''; }, 70);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // регистрация событий мыши и тач
+        canvas.addEventListener('mousedown', handleCanvasClick);
+        canvas.addEventListener('touchstart', handleCanvasClick, {passive: false});
+        // кнопка сброса
+        resetBtn.addEventListener('click', () => {
+            resetGame();
+            // также гарантируем, что игра активна и таймер обновлён
+            gameActive = true;
+            // если игра была закончена, поднимаем флаг
+            if(timeLeft <= 0) timeLeft = 12.0;
+            updateUI();
+            drawCanvas();
+        });
+        
+        // Запуск игры с начальными значениями
+        function init() {
+            resetGame();  // устанавливает активные параметры
+            previousTime = null;
+            requestAnimationFrame(gameLoop);
+        }
+        
+        init();
+    })();
+</script>
+</body>
+</html>
